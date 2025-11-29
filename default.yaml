@@ -1,0 +1,46 @@
+taggroups:
+  - id: language
+    name: 语言
+    default: true
+    tags: ['中文', 'English']
+  
+  - id: category
+    name: 分类
+    default: false
+    tags: ['技术', '社区', '开源', '新闻', '文档']
+  
+  - id: features
+    name: 特点
+    default: false
+    tags: ['高质量内容', '付费墙']
+
+links:
+  - title: GitHub
+    url: https://github.com
+    description: 全球最大的代码托管平台
+    tags: [English, 技术, 开源]
+  
+  - title: 掘金
+    url: https://juejin.cn
+    description: 中文技术社区
+    tags: [中文, 技术, 社区]
+  
+  - title: 知乎
+    url: https://www.zhihu.com
+    description: 中文问答社区
+    tags: [中文, 社区, 高质量内容]
+  
+  - title: 纽约时报
+    url: https://www.nytimes.com
+    description: 国际新闻媒体
+    tags: [English, 新闻, 高质量内容, 付费墙]
+  
+  - title: MDN Web Docs
+    url: https://developer.mozilla.org
+    description: Web技术文档
+    tags: [English, 中文, 技术, 文档, 高质量内容]
+  
+  - title: Stack Overflow
+    url: https://stackoverflow.com
+    description: 程序员问答社区
+    tags: [English, 技术, 社区, 高质量内容]

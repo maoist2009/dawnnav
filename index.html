@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>链接收藏夹</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+  <script>
+    // 配置Tailwind CSS
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            'dark-bg': '#121212',
+            'dark-card': '#1e1e12',
+            'dark-border': '#2d2d2d',
+            'dark-text': '#e0e0e0',
+            'dark-secondary': '#a0a0a0'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --sidebar-width: 16rem;
+    }
+    
+    .tag-pill {
+      transition: all 0.2s ease;
+    }
+    .tag-pill:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .link-card {
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .link-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+    .link-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: linear-gradient(to bottom, #3b82f6, #8b5cf6);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .link-card:hover::before {
+      opacity: 1;
+    }
+    .sidebar {
+      transition: transform 0.3s ease;
+      width: var(--sidebar-width);
+    }
+    @media (max-width: 768px) {
+      .sidebar.hidden-mobile {
+        transform: translateX(-100%);
+      }
+    }
+    .theme-toggle {
+      transition: transform 0.3s ease;
+    }
+    .theme-toggle.dark {
+      transform: rotate(180deg);
+    }
+    .dark .link-card:hover {
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+    }
+    
+    /* Favicon loader animation */
+    @keyframes pulse {
+      0% { opacity: 0.4; }
+      50% { opacity: 1; }
+      100% { opacity: 0.4; }
+    }
+    .favicon-loader {
+      animation: pulse 1.5s infinite;
+    }
+    
+    .loader {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #3b82f6;
+      animation: spin 1s ease-in-out infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* 编辑模式样式 */
+    .edit-mode .link-card {
+      cursor: move;
+    }
+    .edit-btn {
+      transition: all 0.2s ease;
+    }
+    .edit-btn:hover {
+      transform: scale(1.1);
+    }
+    .editor-panel {
+      transition: all 0.3s ease;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-dark-bg dark:text-dark-text min-h-screen transition-colors duration-300">
+  <div id="app" class="flex flex-col h-screen">
+    <!-- 加载指示器 -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-white dark:bg-dark-bg z-50 flex flex-col items-center justify-center transition-opacity duration-300">
+      <div class="loader mb-4"></div>
+      <p class="text-gray-600 dark:text-gray-400">加载中...</p>
+    </div>
+    
+    <!-- 顶部导航 -->
+    <header class="bg-white shadow-sm border-b border-gray-200 dark:bg-dark-card dark:border-dark-border sticky top-0 z-20">
+      <div class="px-4 py-3">
+        <!-- 搜索栏 + 主题切换 -->
+        <div class="flex items-center gap-3 mb-3">
+          <button id="menuToggle" class="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-border">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+          <div class="flex-1 relative">
+            <input 
+              type="text" 
+              id="searchInput" 
+              placeholder="搜索... 支持 tag:中文 -tag:付费墙 语法"
+              class="w-full px-4 py-2.5 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none dark:bg-dark-card dark:border-dark-border dark:text-dark-text"
+            >
+            <svg class="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="editModeToggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-border">
+              <svg class="w-6 h-6 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+              </svg>
+            </button>
+            <button id="themeToggle" class="theme-toggle p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-border">
+              <svg class="w-6 h-6 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        
+        <!-- TagGroup 选择器 -->
+        <div class="flex items-center gap-2 overflow-x-auto pt-2 pb-1">
+          <span class="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">分组:</span>
+          <div id="tagGroupSelector" class="flex gap-2">
+            <!-- 动态生成 -->
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+      <!-- 左侧标签栏 -->
+      <aside id="sidebar" class="sidebar bg-white border-r border-gray-200 dark:bg-dark-card dark:border-dark-border overflow-y-auto fixed md:relative h-full z-10 hidden-mobile md:block">
+        <div class="p-4">
+          <h3 id="sidebarTitle" class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">标签</h3>
+          <div id="tagList" class="space-y-2">
+            <!-- 动态生成 -->
+          </div>
+        </div>
+      </aside>
+
+      <!-- 遮罩层 -->
+      <div id="overlay" class="fixed inset-0 bg-black/50 z-5 hidden md:hidden" onclick="toggleSidebar()"></div>
+
+      <!-- 右侧内容区 -->
+      <main class="flex-1 overflow-y-auto p-4 md:p-6">
+        <div class="mb-6 flex items-center justify-between">
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-white">链接收藏夹</h1>
+          <div class="text-sm text-gray-500 dark:text-gray-400">
+            <span id="linksCount">0</span> 个链接
+          </div>
+        </div>
+        
+        <div id="linkGroups" class="space-y-8">
+          <!-- 动态生成 -->
+        </div>
+        <div id="noResults" class="hidden text-center py-16">
+          <svg class="w-16 h-16 text-gray-300 dark:text-gray-700 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <p class="text-gray-500 dark:text-gray-400">没有找到匹配的链接</p>
+        </div>
+      </main>
+    </div>
+    
+    <!-- 编辑面板 -->
+    <div id="editorPanel" class="fixed inset-0 bg-black/50 z-40 hidden flex items-center justify-center p-4">
+      <div class="bg-white dark:bg-dark-card rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto editor-panel">
+        <div class="p-4 border-b border-gray-200 dark:border-dark-border flex justify-between items-center">
+          <h2 class="text-xl font-bold text-gray-800 dark:text-white">编辑配置</h2>
+          <div class="flex gap-2">
+            <button id="downloadConfigBtn" class="px-3 py-1.5 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition">
+              下载配置
+            </button>
+            <button id="closeEditorBtn" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-border">
+              <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="p-4">
+          <textarea id="yamlEditor" class="w-full h-96 font-mono text-sm p-3 border border-gray-300 rounded-lg dark:bg-dark-card dark:border-dark-border dark:text-dark-text focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none" placeholder="在此编辑YAML配置..."></textarea>
+          <div class="mt-4 flex justify-end gap-3">
+            <button id="cancelEditBtn" class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-border rounded-lg transition">取消</button>
+            <button id="saveConfigBtn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 数据源信息 -->
+    <div id="dataSourceInfo" class="fixed bottom-4 right-4 bg-white dark:bg-dark-card px-3 py-1.5 rounded-lg text-xs text-gray-600 dark:text-gray-400 shadow-md border border-gray-200 dark:border-dark-border transition-opacity duration-300 opacity-0">
+      数据源: <span id="dataSourceUrl">-</span>
+    </div>
+    
+    <!-- 保存成功提示 -->
+    <div id="saveSuccessToast" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 z-50">
+      配置已保存！
+    </div>
+  </div>
+
+  <script>
+    // ==================== 预定义配色方案 ====================
+    const colorPalette = [
+      '#3498db', '#2ecc71', '#e74c3c', '#9b59b6', '#f39c12', 
+      '#1abc9c', '#34495e', '#16a085', '#27ae60', '#2980b9',
+      '#8e44ad', '#2c3e50', '#f1c40f', '#e67e22', '#d35400'
+    ];
+    
+    // ==================== 状态管理 ====================
+    let state = {
+      activeGroupId: null,
+      selectedTags: {}, // { groupId: [tagNames] }
+      searchQuery: '',
+      theme: 'system', // 'light', 'dark', 'system'
+      editMode: false,
+      data: {
+        taggroups: [],
+        links: []
+      },
+      dataSource: null,
+      originalConfig: '',
+      editedConfig: ''
+    };
+    
+    // ==================== 工具函数 ====================
+    function hashString(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return Math.abs(hash);
+    }
+    
+    function getColorForTag(tagName) {
+      const index = hashString(tagName) % colorPalette.length;
+      return colorPalette[index];
+    }
+    
+    // ==================== Favicon 获取 ====================
+    function getFaviconUrl(url) {
+      try {
+        const domain = new URL(url).hostname;
+        
+        // 返回多个favicon源
+        return {
+          primary: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+          secondary: `https://favicon.is-an.org/?domain=${domain}&sz=64`,
+          fallback: 'https://via.placeholder.com/64/3b82f6/ffffff?text=🌐'
+        };
+      } catch (e) {
+        return {
+          primary: 'https://via.placeholder.com/64/3b82f6/ffffff?text=🌐',
+          secondary: 'https://via.placeholder.com/64/3b82f6/ffffff?text=🌐',
+          fallback: 'https://via.placeholder.com/64/3b82f6/ffffff?text=🌐'
+        };
+      }
+    }
+    
+    // ==================== 数据处理 ====================
+    function processLoadedData(rawData) {
+      // 确保数据结构正确
+      const processedData = {
+        taggroups: [],
+        links: []
+      };
+      
+      // 处理 taggroups
+      if (rawData.taggroups && Array.isArray(rawData.taggroups)) {
+        processedData.taggroups = rawData.taggroups.map(group => {
+          // 为每个标签组中的标签添加颜色
+          if (group.tags && Array.isArray(group.tags)) {
+            group.tags = group.tags.map(tag => {
+              if (typeof tag === 'string') {
+                return {
+                  name: tag,
+                  color: getColorForTag(tag)
+                };
+              } else if (typeof tag === 'object' && tag.name) {
+                return {
+                  ...tag,
+                  color: tag.color || getColorForTag(tag.name)
+                };
+              }
+              return tag;
+            });
+          }
+          return group;
+        });
+      } else {
+        // 如果没有定义 taggroups，尝试从链接中自动创建
+        processedData.taggroups = autoGenerateTagGroups(rawData.links || []);
+      }
+      
+      // 处理 links
+      if (rawData.links && Array.isArray(rawData.links)) {
+        processedData.links = rawData.links.map(link => {
+          // 标准化标签格式：确保 tags 是字符串数组
+          let tags = [];
+          if (link.tags) {
+            if (Array.isArray(link.tags)) {
+              // 直接使用数组中的字符串
+              tags = link.tags.filter(tag => typeof tag === 'string' || typeof tag === 'number').map(tag => String(tag));
+            } else if (typeof link.tags === 'string') {
+              // 如果是字符串，分割成数组
+              tags = link.tags.split(',').map(tag => tag.trim());
+            }
+          }
+          
+          // 创建映射后的标签结构
+          const mappedTags = mapTagsToGroups(tags, processedData.taggroups);
+          
+          return {
+            ...link,
+            tags: mappedTags
+          };
+        });
+      }
+      
+      return processedData;
+    }
+    
+    function mapTagsToGroups(tags, taggroups) {
+      // 创建结果对象，格式为 { groupId: [tagNames] }
+      const result = {};
+      
+      // 为每个标签组初始化空数组
+      taggroups.forEach(group => {
+        result[group.id] = [];
+      });
+      
+      // 遍历所有标签，将它们分配到对应的组
+      (tags || []).forEach(tagName => {
+        let assigned = false;
+        
+        // 尝试找到包含此标签的组
+        for (const group of taggroups) {
+          if (group.tags && Array.isArray(group.tags)) {
+            // 检查组中是否有此标签（兼容字符串和对象格式）
+            const tagExistsInGroup = group.tags.some(tagDef => 
+              (typeof tagDef === 'string' && tagDef === tagName) || 
+              (typeof tagDef === 'object' && tagDef.name === tagName)
+            );
+            
+            if (tagExistsInGroup) {
+              result[group.id].push(tagName);
+              assigned = true;
+              break;
+            }
+          }
+        }
+        
+        // 如果没有找到匹配的组，放入默认组
+        if (!assigned) {
+          const defaultGroup = taggroups.find(g => g.default) || taggroups[0];
+          if (defaultGroup) {
+            result[defaultGroup.id].push(tagName);
+          }
+        }
+      });
+      
+      return result;
+    }
+    
+    function autoGenerateTagGroups(links) {
+      // 从所有链接中提取唯一标签
+      const allTags = new Set();
+      links.forEach(link => {
+        if (link.tags) {
+          if (Array.isArray(link.tags)) {
+            link.tags.forEach(tag => allTags.add(tag));
+          } else if (typeof link.tags === 'string') {
+            allTags.add(link.tags);
+          }
+        }
+      });
+      
+      // 创建一个默认的标签组
+      return [{
+        id: 'default',
+        name: '标签',
+        default: true,
+        tags: Array.from(allTags).map(tagName => ({
+          name: tagName,
+          color: getColorForTag(tagName)
+        }))
+      }];
+    }
+    
+    function getTagDefinition(tagName, taggroups) {
+      for (const group of taggroups) {
+        if (group.tags) {
+          const tagDef = group.tags.find(t => t.name === tagName);
+          if (tagDef) {
+            return {
+              ...tagDef,
+              groupId: group.id,
+              groupName: group.name
+            };
+          }
+        }
+      }
+      return null;
+    }
+    
+    // ==================== 数据加载 ====================
+    async function loadDataFromUrl(url) {
+      try {
+        // 处理相对路径
+        const absoluteUrl = new URL(url, window.location.href).href;
+        
+        const response = await fetch(absoluteUrl);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const contentType = response.headers.get('content-type');
+        let data;
+        
+        if (contentType && contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          // 假设是YAML
+          const yamlText = await response.text();
+          data = jsyaml.load(yamlText);
+          
+          // 保存原始YAML内容用于编辑
+          state.originalConfig = yamlText;
+          state.editedConfig = yamlText;
+        }
+        
+        return data;
+      } catch (error) {
+        console.error('加载数据失败:', error);
+        throw error;
+      }
+    }
+    
+    async function initApp() {
+      showLoading(true);
+      
+      try {
+        // 1. 获取数据源URL
+        const params = new URLSearchParams(window.location.search);
+        let dataSourceUrl = params.get('data');
+        
+        // 2. 如果没有指定数据源，尝试从localStorage获取最后使用的
+        if (!dataSourceUrl) {
+          dataSourceUrl = localStorage.getItem('lastDataSource');
+        }
+        
+        // 3. 如果仍然没有，使用默认 ./default.yaml
+        if (!dataSourceUrl) {
+          dataSourceUrl = './default.yaml';
+        }
+        
+        // 4. 加载数据
+        state.dataSource = dataSourceUrl;
+        
+        try {
+          // 尝试加载指定的数据源
+          const rawData = await loadDataFromUrl(dataSourceUrl);
+          state.data = processLoadedData(rawData);
+        } catch (error) {
+          console.error('加载指定数据源失败:', error);
+          
+          if (dataSourceUrl === './default.yaml') {
+            // 如果是默认文件加载失败，使用内置示例数据
+            console.log('使用内置示例数据');
+            state.data = processLoadedData(getExampleData());
+            state.dataSource = '内置示例';
+          } else {
+            // 尝试加载默认文件
+            try {
+              console.log('尝试加载默认配置文件 ./default.yaml');
+              const rawData = await loadDataFromUrl('./default.yaml');
+              state.data = processLoadedData(rawData);
+              state.dataSource = './default.yaml';
+            } catch (fallbackError) {
+              console.error('加载默认配置文件也失败:', fallbackError);
+              state.data = processLoadedData(getExampleData());
+              state.dataSource = '内置示例';
+            }
+          }
+        }
+        
+        // 5. 保存数据源
+        localStorage.setItem('lastDataSource', state.dataSource);
+        
+        // 6. 更新UI显示数据源
+        document.getElementById('dataSourceUrl').textContent = state.dataSource;
+        document.getElementById('dataSourceInfo').classList.add('opacity-100');
+        
+        // 7. 设置活动标签组 - 优先使用默认组
+        const defaultGroup = state.data.taggroups.find(g => g.default);
+        state.activeGroupId = defaultGroup ? defaultGroup.id : (state.data.taggroups[0]?.id || 'default');
+        
+        // 8. 加载用户状态
+        loadState();
+        
+        // 9. 渲染应用
+        render();
+      } catch (error) {
+        console.error('初始化应用失败:', error);
+        alert('初始化应用失败: ' + error.message);
+      } finally {
+        showLoading(false);
+      }
+    }
+    
+    function getExampleData() {
+      return {
+        taggroups: [
+          {
+            id: 'language',
+            name: '语言',
+            default: true,
+            tags: ['中文', 'English']
+          },
+          {
+            id: 'category',
+            name: '分类',
+            default: false,
+            tags: ['技术', '社区', '开源']
+          },
+          {
+            id: 'features',
+            name: '特点',
+            default: false,
+            tags: ['高质量内容', '付费墙']
+          }
+        ],
+        links: [
+          {
+            title: 'GitHub',
+            url: 'https://github.com',
+            description: '全球最大的代码托管平台',
+            tags: ['English', '技术', '开源']
+          },
+          {
+            title: '掘金',
+            url: 'https://juejin.cn',
+            description: '中文技术社区',
+            tags: ['中文', '技术', '社区']
+          },
+          {
+            title: '知乎',
+            url: 'https://www.zhihu.com',
+            description: '中文问答社区',
+            tags: ['中文', '社区', '高质量内容']
+          },
+          {
+            title: '纽约时报',
+            url: 'https://www.nytimes.com',
+            description: '国际新闻媒体',
+            tags: ['English', '高质量内容', '付费墙']
+          },
+          {
+            title: 'MDN Web Docs',
+            url: 'https://developer.mozilla.org',
+            description: 'Web技术文档',
+            tags: ['English', '中文', '技术', '高质量内容']
+          },
+          {
+            title: 'Stack Overflow',
+            url: 'https://stackoverflow.com',
+            description: '程序员问答社区',
+            tags: ['English', '技术', '高质量内容']
+          }
+        ]
+      };
+    }
+    
+    function showLoading(show) {
+      document.getElementById('loadingOverlay').style.opacity = show ? '1' : '0';
+      document.getElementById('loadingOverlay').style.pointerEvents = show ? 'all' : 'none';
+    }
+    
+    // ==================== 状态管理 ====================
+    function loadState() {
+      const savedState = localStorage.getItem('linkManagerState');
+      const defaultState = {
+        selectedTags: {},
+        searchQuery: '',
+        theme: 'system',
+        editMode: false
+      };
+      
+      if (savedState) {
+        try {
+          const parsed = JSON.parse(savedState);
+          // 只恢复相关状态，不恢复activeGroupId
+          state.selectedTags = parsed.selectedTags || {};
+          state.theme = parsed.theme || 'system';
+          state.editMode = parsed.editMode || false;
+        } catch (e) {
+          console.error('解析保存的状态失败:', e);
+          Object.assign(state, defaultState);
+        }
+      } else {
+        Object.assign(state, defaultState);
+      }
+      
+      // 从URL参数恢复搜索
+      const params = new URLSearchParams(window.location.search);
+      const urlSearch = params.get('q');
+      if (urlSearch) {
+        state.searchQuery = urlSearch;
+        document.getElementById('searchInput').value = urlSearch;
+      }
+      
+      // 应用编辑模式
+      document.body.classList.toggle('edit-mode', state.editMode);
+      
+      applyTheme();
+    }
+    
+    function saveState() {
+      localStorage.setItem('linkManagerState', JSON.stringify({
+        selectedTags: state.selectedTags,
+        theme: state.theme,
+        editMode: state.editMode
+      }));
+      
+      // 更新URL
+      const params = new URLSearchParams(window.location.search);
+      if (state.searchQuery) {
+        params.set('q', state.searchQuery);
+      } else {
+        params.delete('q');
+      }
+      
+      if (state.dataSource && state.dataSource !== './default.yaml') {
+        params.set('data', state.dataSource);
+      } else {
+        params.delete('data');
+      }
+      
+      params.set('group', state.activeGroupId);
+      
+      if (Object.keys(state.selectedTags).length > 0) {
+        params.set('tags', encodeURIComponent(JSON.stringify(state.selectedTags)));
+      } else {
+        params.delete('tags');
+      }
+      
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState({}, '', newUrl);
+    }
+    
+    // ==================== 暗色模式功能 ====================
+    function getSystemTheme() {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    
+    function applyTheme() {
+      const htmlElement = document.documentElement;
+      
+      if (state.theme === 'system') {
+        const systemTheme = getSystemTheme();
+        htmlElement.classList.toggle('dark', systemTheme === 'dark');
+      } else {
+        htmlElement.classList.toggle('dark', state.theme === 'dark');
+      }
+      
+      // 更新主题切换按钮状态
+      const themeToggle = document.getElementById('themeToggle');
+      if (themeToggle) {
+        themeToggle.querySelector('svg').innerHTML = state.theme === 'dark' ? 
+          '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>' :
+          '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>';
+        
+        themeToggle.classList.toggle('dark', state.theme === 'dark');
+      }
+      
+      // 更新编辑模式下的主题
+      const editorPanel = document.getElementById('editorPanel');
+      if (editorPanel) {
+        editorPanel.classList.toggle('dark', htmlElement.classList.contains('dark'));
+      }
+    }
+    
+    function toggleTheme() {
+      if (state.theme === 'system') {
+        state.theme = getSystemTheme() === 'dark' ? 'light' : 'dark';
+      } else if (state.theme === 'dark') {
+        state.theme = 'light';
+      } else {
+        state.theme = 'system';
+      }
+      
+      applyTheme();
+      saveState();
+    }
+    
+    function toggleEditMode() {
+      state.editMode = !state.editMode;
+      document.body.classList.toggle('edit-mode', state.editMode);
+      saveState();
+      
+      if (state.editMode) {
+        // 进入编辑模式，显示编辑面板
+        showEditorPanel();
+      }
+    }
+    
+    function showEditorPanel() {
+      const editorPanel = document.getElementById('editorPanel');
+      const yamlEditor = document.getElementById('yamlEditor');
+      
+      // 设置编辑器内容
+      yamlEditor.value = state.editedConfig || state.originalConfig || jsyaml.dump({
+        taggroups: state.data.taggroups.map(group => ({
+          id: group.id,
+          name: group.name,
+          default: group.default,
+          tags: group.tags.map(tag => tag.name)
+        })),
+        links: state.data.links.map(link => ({
+          title: link.title,
+          url: link.url,
+          description: link.description,
+          tags: Object.values(link.tags).flat()
+        }))
+      });
+      
+      editorPanel.classList.remove('hidden');
+    }
+    
+    function closeEditorPanel() {
+      document.getElementById('editorPanel').classList.add('hidden');
+    }
+    
+    // ==================== 搜索解析 ====================
+    function parseSearchQuery(query) {
+      const result = {
+        text: [],
+        includeTags: [], // { groupId, tagName } 或 tag名称
+        excludeTags: []  // tag名称
+      };
+    
+      if (!query.trim()) return result;
+    
+      const tokens = query.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+      
+      for (const token of tokens) {
+        if (token.startsWith('-tag:')) {
+          // 排除标签
+          const tagName = token.slice(5);
+          result.excludeTags.push(tagName);
+        } else if (token.startsWith('tag:')) {
+          // 包含标签
+          const tagName = token.slice(4);
+          result.includeTags.push(tagName);
+        } else {
+          // 普通文本搜索
+          result.text.push(token.replace(/"/g, '').toLowerCase());
+        }
+      }
+    
+      return result;
+    }
+    
+    // ==================== 筛选逻辑 ====================
+    function filterLinks() {
+      const searchParsed = parseSearchQuery(state.searchQuery);
+      const { links, taggroups } = state.data;
+      const activeGroup = taggroups.find(g => g.id === state.activeGroupId);
+      const selectedTagsForGroup = state.selectedTags[state.activeGroupId] || [];
+    
+      return links.filter(link => {
+        // 1. 检查当前分组的标签筛选
+        if (selectedTagsForGroup.length > 0) {
+          const linkTags = link.tags[state.activeGroupId] || [];
+          // 链接必须包含至少一个选中的标签
+          if (!selectedTagsForGroup.some(t => linkTags.includes(t))) {
+            return false;
+          }
+        }
+    
+        // 2. 检查搜索语法中的标签包含
+        for (const includeTag of searchParsed.includeTags) {
+          let hasTag = false;
+          
+          // 检查链接是否包含该标签
+          for (const [groupId, tagNames] of Object.entries(link.tags)) {
+            if (tagNames.includes(includeTag)) {
+              hasTag = true;
+              break;
+            }
+          }
+          
+          if (!hasTag) {
+            return false;
+          }
+        }
+    
+        // 3. 检查搜索语法中的标签排除
+        for (const excludeTag of searchParsed.excludeTags) {
+          // 在所有分组中查找该标签
+          for (const tagNames of Object.values(link.tags)) {
+            if (tagNames.includes(excludeTag)) {
+              return false;
+            }
+          }
+        }
+    
+        // 4. 文本搜索
+        if (searchParsed.text.length > 0) {
+          const searchableText = `${link.title} ${link.description || ''} ${link.url}`.toLowerCase();
+          if (!searchParsed.text.every(t => searchableText.includes(t.toLowerCase()))) {
+            return false;
+          }
+        }
+    
+        return true;
+      });
+    }
+    
+    // 按当前分组的标签组织链接
+    function groupLinksByTag(filteredLinks) {
+      const activeGroup = state.data.taggroups.find(g => g.id === state.activeGroupId);
+      const groups = {};
+      const noTagLinks = [];
+      
+      // 初始化所有标签组
+      if (activeGroup && activeGroup.tags) {
+        activeGroup.tags.forEach(tag => {
+          groups[tag.name] = [];
+        });
+      }
+    
+      // 分配链接
+      filteredLinks.forEach(link => {
+        const linkTags = link.tags[state.activeGroupId] || [];
+        if (linkTags.length === 0) {
+          noTagLinks.push(link);
+        } else {
+          linkTags.forEach(tagName => {
+            if (groups[tagName]) {
+              groups[tagName].push(link);
+            }
+          });
+        }
+      });
+    
+      return { groups, noTagLinks };
+    }
+    
+    // ==================== 渲染函数 ====================
+    function renderTagGroupSelector() {
+      const container = document.getElementById('tagGroupSelector');
+      const { taggroups } = state.data;
+      
+      container.innerHTML = taggroups.map(group => `
+        <button 
+          onclick="switchTagGroup('${group.id}')"
+          class="px-3 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap
+            ${state.activeGroupId === group.id 
+              ? 'bg-blue-500 text-white shadow-md' 
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-border dark:text-gray-300 dark:hover:bg-gray-700'}"
+        >
+          ${group.name}
+        </button>
+      `).join('');
+    }
+    
+    function renderTagList() {
+      const container = document.getElementById('tagList');
+      const titleEl = document.getElementById('sidebarTitle');
+      const { taggroups } = state.data;
+      const activeGroup = taggroups.find(g => g.id === state.activeGroupId);
+      const selectedTags = state.selectedTags[state.activeGroupId] || [];
+      
+      if (activeGroup) {
+        titleEl.textContent = activeGroup.name;
+      }
+    
+      // 计算每个标签的链接数量
+      const tagCounts = {};
+      if (activeGroup && activeGroup.tags) {
+        activeGroup.tags.forEach(tag => {
+          tagCounts[tag.name] = state.data.links.filter(link => 
+            (link.tags[state.activeGroupId] || []).includes(tag.name)
+          ).length;
+        });
+      }
+    
+      if (!activeGroup || !activeGroup.tags || activeGroup.tags.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm">该分组没有标签</p>';
+        return;
+      }
+      
+      container.innerHTML = `
+        <button 
+          onclick="clearTagSelection()"
+          class="w-full text-left px-3 py-2 rounded-lg text-sm transition-all
+            ${selectedTags.length === 0 
+              ? 'bg-gray-100 font-medium dark:bg-gray-700 dark:text-white' 
+              : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}"
+        >
+          全部 <span class="text-gray-400 dark:text-gray-500">(${state.data.links.length})</span>
+        </button>
+        ${activeGroup.tags.map(tag => {
+          const isSelected = selectedTags.includes(tag.name);
+          const foregroundColor = getForegroundColor(tag.color);
+          
+          return `
+            <button 
+              onclick="toggleTag('${tag.name}')"
+              class="w-full text-left px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2
+                ${isSelected 
+                  ? 'bg-gray-100 font-medium ring-2 ring-offset-1 dark:bg-gray-700 dark:text-white' 
+                  : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300'}"
+              style="color: ${isSelected ? '' : foregroundColor}; ${isSelected ? `--tw-ring-color: ${tag.color}` : ''}"
+            >
+              <span class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: ${tag.color}"></span>
+              <span class="flex-1">${tag.name}</span>
+              <span class="text-gray-400 dark:text-gray-500">(${tagCounts[tag.name] || 0})</span>
+            </button>
+          `;
+        }).join('')}
+      `;
+    }
+    
+    function getForegroundColor(hexColor) {
+      // 计算亮度
+      const r = parseInt(hexColor.slice(1, 3), 16);
+      const g = parseInt(hexColor.slice(3, 5), 16);
+      const b = parseInt(hexColor.slice(5, 7), 16);
+      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+      
+      // 如果亮度高，使用深色文字；如果亮度低，使用浅色文字
+      return brightness > 128 ? '#333333' : '#ffffff';
+    }
+    
+    function renderLinks() {
+      const container = document.getElementById('linkGroups');
+      const noResults = document.getElementById('noResults');
+      const filteredLinks = filterLinks();
+      const { groups, noTagLinks } = groupLinksByTag(filteredLinks);
+      const activeGroup = state.data.taggroups.find(g => g.id === state.activeGroupId);
+      
+      // 更新链接计数
+      document.getElementById('linksCount').textContent = filteredLinks.length;
+      
+      if (filteredLinks.length === 0) {
+        container.innerHTML = '';
+        noResults.classList.remove('hidden');
+        return;
+      }
+    
+      noResults.classList.add('hidden');
+    
+      let html = '';
+      
+      // 渲染每个标签组
+      if (activeGroup && activeGroup.tags) {
+        activeGroup.tags.forEach(tag => {
+          const tagLinks = groups[tag.name] || [];
+          if (tagLinks.length === 0) return;
+          
+          html += `
+            <section>
+              <div class="flex items-center gap-2 mb-4">
+                <span class="w-4 h-4 rounded-full" style="background-color: ${tag.color}"></span>
+                <h2 class="text-lg font-semibold text-gray-800 dark:text-white">${tag.name}</h2>
+                <span class="text-sm text-gray-400 dark:text-gray-500">(${tagLinks.length})</span>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                ${tagLinks.map(link => renderLinkCard(link)).join('')}
+              </div>
+            </section>
+          `;
+        });
+      }
+    
+      // 渲染无标签的链接
+      if (noTagLinks.length > 0) {
+        html += `
+          <section>
+            <div class="flex items-center gap-2 mb-4">
+              <span class="w-4 h-4 rounded-full bg-gray-300 dark:bg-gray-600"></span>
+              <h2 class="text-lg font-semibold text-gray-800 dark:text-white">未分类</h2>
+              <span class="text-sm text-gray-400 dark:text-gray-500">(${noTagLinks.length})</span>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              ${noTagLinks.map(link => renderLinkCard(link)).join('')}
+            </div>
+          </section>
+        `;
+      }
+    
+      container.innerHTML = html;
+    }
+    
+    function renderLinkCard(link) {
+      // 获取链接的所有标签
+      const allTags = [];
+      for (const [groupId, tagNames] of Object.entries(link.tags)) {
+        const group = state.data.taggroups.find(g => g.id === groupId);
+        if (group) {
+          tagNames.forEach(tagName => {
+            const tagDef = group.tags.find(t => t.name === tagName);
+            if (tagDef) {
+              allTags.push({
+                ...tagDef,
+                groupId,
+                groupName: group.name
+              });
+            }
+          });
+        }
+      }
+      
+      // 获取网站图标
+      const favicon = getFaviconUrl(link.url);
+      
+      return `
+        <a href="${link.url}" target="_blank" rel="noopener noreferrer nofollow"
+           class="link-card block bg-white dark:bg-dark-card rounded-xl p-4 border border-gray-200 dark:border-dark-border hover:border-blue-300 dark:hover:border-blue-500">
+          <div class="flex items-start gap-3">
+            <div class="flex-shrink-0 w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-dark-border">
+              <img src="${favicon.primary}" alt="" class="w-6 h-6 object-contain favicon-loader" 
+                   onerror="this.onerror=null; this.src='${favicon.secondary}'" 
+                   onload="this.classList.remove('favicon-loader')">
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+                <span class="truncate">${link.title}</span>
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+              </h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mb-3 line-clamp-2">${link.description || '暂无描述'}</p>
+              <div class="flex flex-wrap gap-1.5">
+                ${allTags.map(tag => `
+                  <span 
+                    class="tag-pill px-2 py-0.5 rounded-full text-xs font-medium"
+                    style="background-color: ${tag.color}; color: ${getForegroundColor(tag.color)};"
+                    title="${tag.groupName}"
+                  >${tag.name}</span>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </a>
+      `;
+    }
+    
+    function render() {
+      renderTagGroupSelector();
+      renderTagList();
+      renderLinks();
+    }
+    
+    // ==================== 事件处理 ====================
+    function switchTagGroup(groupId) {
+      state.activeGroupId = groupId;
+      saveState();
+      render();
+    }
+    
+    function toggleTag(tagName) {
+      const activeGroup = state.data.taggroups.find(g => g.id === state.activeGroupId);
+      let selectedTags = state.selectedTags[state.activeGroupId] || [];
+      
+      // 切换标签选择
+      if (selectedTags.includes(tagName)) {
+        selectedTags = selectedTags.filter(t => t !== tagName);
+      } else {
+        selectedTags = [...selectedTags, tagName];
+      }
+      
+      if (selectedTags.length === 0) {
+        delete state.selectedTags[state.activeGroupId];
+      } else {
+        state.selectedTags[state.activeGroupId] = selectedTags;
+      }
+      
+      saveState();
+      render();
+    }
+    
+    function clearTagSelection() {
+      delete state.selectedTags[state.activeGroupId];
+      saveState();
+      render();
+    }
+    
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('overlay');
+      sidebar.classList.toggle('hidden-mobile');
+      overlay.classList.toggle('hidden');
+    }
+    
+    function showSaveSuccess() {
+      const toast = document.getElementById('saveSuccessToast');
+      toast.style.opacity = '1';
+      
+      setTimeout(() => {
+        toast.style.opacity = '0';
+      }, 2000);
+    }
+    
+    function saveConfig() {
+      const yamlEditor = document.getElementById('yamlEditor');
+      const yamlContent = yamlEditor.value;
+      
+      try {
+        // 验证YAML格式
+        const parsedData = jsyaml.load(yamlContent);
+        
+        // 保存到localStorage
+        localStorage.setItem('customConfig', yamlContent);
+        
+        // 更新应用数据
+        state.data = processLoadedData(parsedData);
+        state.originalConfig = yamlContent;
+        state.editedConfig = yamlContent;
+        
+        // 设置数据源为"自定义配置"
+        state.dataSource = '自定义配置';
+        document.getElementById('dataSourceUrl').textContent = state.dataSource;
+        
+        // 重新渲染
+        render();
+        
+        // 关闭编辑面板
+        closeEditorPanel();
+        
+        // 显示成功提示
+        showSaveSuccess();
+      } catch (error) {
+        alert('保存配置失败: ' + error.message + '\n\n请检查YAML格式是否正确。');
+        console.error('YAML解析错误:', error);
+      }
+    }
+    
+    function downloadConfig() {
+      const yamlContent = document.getElementById('yamlEditor').value;
+      
+      // 创建下载链接
+      const blob = new Blob([yamlContent], { type: 'application/yaml' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'links-collection.yaml';
+      document.body.appendChild(a);
+      a.click();
+      
+      // 清理
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 0);
+    }
+    
+    // ==================== 初始化 ====================
+    document.addEventListener('DOMContentLoaded', () => {
+      // 初始化主题切换按钮
+      document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+      
+      // 搜索输入监听
+      const searchInput = document.getElementById('searchInput');
+      let debounceTimer;
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          state.searchQuery = e.target.value;
+          saveState();
+          renderLinks();
+        }, 300);
+      });
+      
+      // 移动端菜单切换
+      document.getElementById('menuToggle').addEventListener('click', toggleSidebar);
+      
+      // 编辑模式切换
+      document.getElementById('editModeToggle').addEventListener('click', toggleEditMode);
+      
+      // 编辑面板事件
+      document.getElementById('closeEditorBtn').addEventListener('click', closeEditorPanel);
+      document.getElementById('cancelEditBtn').addEventListener('click', closeEditorPanel);
+      document.getElementById('saveConfigBtn').addEventListener('click', saveConfig);
+      document.getElementById('downloadConfigBtn').addEventListener('click', downloadConfig);
+      
+      // 点击遮罩关闭编辑面板
+      document.getElementById('editorPanel').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('editorPanel')) {
+          closeEditorPanel();
+        }
+      });
+      
+      // 处理浏览器前进后退
+      window.addEventListener('popstate', () => {
+        loadState();
+        document.getElementById('searchInput').value = state.searchQuery;
+        
+        // 从URL恢复 activeGroupId
+        const params = new URLSearchParams(window.location.search);
+        const urlGroup = params.get('group');
+        if (urlGroup) {
+          state.activeGroupId = urlGroup;
+        }
+        
+        // 从URL恢复 selectedTags
+        const urlTags = params.get('tags');
+        if (urlTags) {
+          try {
+            state.selectedTags = JSON.parse(decodeURIComponent(urlTags));
+          } catch (e) {
+            console.error('解析URL标签失败:', e);
+            state.selectedTags = {};
+          }
+        }
+        
+        render();
+      });
+      
+      // 监听系统主题变化
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if (state.theme === 'system') {
+          applyTheme();
+        }
+      });
+      
+      // 初始化应用
+      initApp();
+      
+      // 检查是否存在自定义配置
+      const customConfig = localStorage.getItem('customConfig');
+      if (customConfig) {
+        // 如果有自定义配置，使用它
+        try {
+          const parsedData = jsyaml.load(customConfig);
+          state.data = processLoadedData(parsedData);
+          state.dataSource = '自定义配置';
+          document.getElementById('dataSourceUrl').textContent = state.dataSource;
+          document.getElementById('dataSourceInfo').classList.add('opacity-100');
+        } catch (e) {
+          console.error('加载自定义配置失败:', e);
+        }
+      }
+    });
+    
+    // 全局函数（用于HTML中的onclick）
+    window.switchTagGroup = switchTagGroup;
+    window.toggleTag = toggleTag;
+    window.clearTagSelection = clearTagSelection;
+    window.toggleSidebar = toggleSidebar;
+  </script>
+</body>
+</html>
